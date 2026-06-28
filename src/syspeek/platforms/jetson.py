@@ -48,7 +48,7 @@ class JetsonPlatform(Platform):
 
     def notes(self) -> list[str]:
         return [
-            "Integrated GPU: host<->device copies traverse shared LPDDR, not PCIe; "
-            "H2D/D2H reflect memory-subsystem bandwidth, not a discrete-link peak.",
-            "GPU memory is carved from system RAM; pick sizes that leave headroom.",
+            "Integrated GPU: host<->device copies traverse shared LPDDR, not PCIe.",
+            "For peak GEMM, set power mode to MAXN: sudo nvpmodel -m 0 && sudo jetson_clocks.",
+            "NVIDIA marketing TFLOPS (e.g. 2070 sparse FP4) ≠ SysPeek dense cuBLAS GEMM.",
         ]

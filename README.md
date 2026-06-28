@@ -10,7 +10,7 @@
 |------|--------|------|------|
 | compute | `gemm_flops` | TFLOPS / TOPS | GEMM 吞吐，覆盖 fp32 / tf32 / fp16 / bf16 / int8 / fp8 |
 | memory | `host_device_bw` | GB/s | H2D / D2H 带宽（pinned 与 pageable 两种主存） |
-| memory | `device_mem_bw` | GB/s | 显存带宽（大块 copy 读+写、write-only） |
+| memory | `device_mem_bw` | GB/s | GPU 本地显存/统一内存带宽（device copy 读+写、write-only） |
 | latency | `kernel_launch` | us | 单 kernel 启动/调度开销 |
 
 效率列（Eff.）= 实测 / 理论峰值。理论峰值来源由 `--spec-source` 控制（见下）。
@@ -85,7 +85,7 @@ syspeek run
 
 - 若 JetPack 已预装系统级 PyTorch，也可在 venv 中单独安装 **与 JetPack CUDA 13 匹配** 的 `cu130` wheel，避免混用 `cu128`。
 - 统一内存：建议减小 buffer，例如  
-  `syspeek run --transfer-mb 128 --hbm-mb 256 --gemm-size 4096`
+  `syspeek run --transfer-mb 128 --device-mem-mb 256 --gemm-size 4096`
 - 理论峰值需在 Thor 真机标定后写入 `theoretical.py`（当前可能只显示实测、无 Eff.）。
 
 ---
@@ -128,7 +128,7 @@ syspeek run --bench gemm_flops --dtype fp16 --dtype bf16
 syspeek run --category memory
 
 # 调整规模与迭代
-syspeek run --gemm-size 8192 --transfer-mb 256 --hbm-mb 1024 --warmup 10 --rep 50
+syspeek run --gemm-size 8192 --transfer-mb 256 --device-mem-mb 1024 --warmup 10 --rep 50
 
 # 导出 JSON（便于跨设备对比）
 syspeek run -o result_4070.json
@@ -147,7 +147,7 @@ syspeek run --json > result.json
 | `--transfer-mb` | H2D/D2H 总传输大小 | 256 |
 | `--transfer-streams` | 并行 CUDA stream 数 | 8 |
 | `--transfer-mode` | `multi_stream` / `single` / `threaded` | multi_stream |
-| `--hbm-mb` | 显存测试 buffer 大小 | 1024 |
+| `--device-mem-mb` | GPU 本地显存测试 buffer 大小 | 1024 |
 | `--no-flush-l2` | 关闭 L2 flush | off |
 | `--spec-source` | 理论峰值来源：`auto` / `fixed` / `auto-fallback` | auto-fallback |
 | `-o/--output` | 写 JSON 文件 | — |
@@ -173,7 +173,7 @@ SysPeek/
     │   ├── base.py            # Benchmark 抽象基类
     │   ├── compute_flops.py   # GEMM FLOPS（多 dtype，OOM 自适应缩小）
     │   ├── memory_transfer.py # H2D / D2H（pinned / pageable）
-    │   ├── memory_hbm.py      # 显存 copy / write 带宽
+    │   ├── memory_device.py   # GPU 本地显存 copy / write 带宽（GDDR/LPDDR）
     │   └── latency.py         # kernel 启动延迟
     └── platforms/
         ├── base.py            # Platform 抽象

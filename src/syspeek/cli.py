@@ -67,6 +67,11 @@ def list_benchmarks() -> None:
 @click.option("--warmup", default=10, type=int, help="Warmup iterations.")
 @click.option("--rep", default=50, type=int, help="Timed repetitions.")
 @click.option("--gemm-size", default=8192, type=int, help="Square GEMM M=N=K.")
+@click.option(
+    "--gemm-fast",
+    is_flag=True,
+    help="FP16/BF16: use Tensor Core fast accumulation (FP16 acc, higher TFLOPS).",
+)
 @click.option("--transfer-mb", default=256, type=int, help="H2D/D2H total transfer size (MB).")
 @click.option(
     "--transfer-streams",
@@ -82,7 +87,12 @@ def list_benchmarks() -> None:
     show_default=True,
     help="Copy strategy: multi_stream (default), single buffer, or threaded CPU submit.",
 )
-@click.option("--hbm-mb", default=1024, type=int, help="On-device buffer size (MB).")
+@click.option(
+    "--device-mem-mb",
+    default=1024,
+    type=int,
+    help="GPU local memory (VRAM/LPDDR) test buffer size (MB).",
+)
 @click.option("--no-flush-l2", is_flag=True, help="Disable L2 cache flush between reps.")
 @click.option(
     "--spec-source",
@@ -104,10 +114,11 @@ def run(
     warmup: int,
     rep: int,
     gemm_size: int,
+    gemm_fast: bool,
     transfer_mb: int,
     transfer_streams: int,
     transfer_mode: str,
-    hbm_mb: int,
+    device_mem_mb: int,
     no_flush_l2: bool,
     spec_source: str,
     output: Optional[str],
@@ -127,10 +138,11 @@ def run(
         flush_l2=not no_flush_l2,
         sizes={
             "gemm_size": gemm_size,
+            "gemm_fast": gemm_fast,
             "transfer_bytes": transfer_mb * 1024 * 1024,
             "transfer_streams": transfer_streams,
             "transfer_mode": transfer_mode,
-            "hbm_bytes": hbm_mb * 1024 * 1024,
+            "device_mem_bytes": device_mem_mb * 1024 * 1024,
         },
         dtypes=list(dtypes) if dtypes else None,
         spec_source=spec_mode,

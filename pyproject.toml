@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "syspeek"
 version = "0.1.0"
-description = "Cross-GPU hardware benchmark tool: achieved FLOPS, PCIe/HBM bandwidth, latency. Supports discrete GPUs (e.g. RTX 4070) and Jetson (e.g. Thor)."
+description = "Cross-GPU hardware benchmark tool: achieved FLOPS, PCIe/device memory bandwidth, latency. Supports discrete GPUs (e.g. RTX 4070) and Jetson (e.g. Thor)."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

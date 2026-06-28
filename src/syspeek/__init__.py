@@ -3,7 +3,7 @@
 Measures *achieved* hardware metrics on NVIDIA GPUs:
   - Compute throughput (GEMM TFLOPS across dtypes)
   - Host<->Device bandwidth (PCIe / shared-memory on Jetson)
-  - On-device memory bandwidth (HBM / LPDDR)
+  - On-device memory bandwidth (GDDR / LPDDR on GPU)
   - Kernel launch latency
 
 Designed to run on both discrete GPUs (e.g. RTX 4070) and integrated

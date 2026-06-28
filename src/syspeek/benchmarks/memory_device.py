@@ -1,8 +1,9 @@
-"""On-device memory bandwidth (HBM/GDDR on discrete GPUs, LPDDR on Jetson).
+"""On-device memory (VRAM / LPDDR) bandwidth.
 
-Uses a large device-to-device copy as the canonical effective-bandwidth probe:
-each element is read once and written once, so bytes moved = 2 * buffer size.
-A write-only (memset) probe is reported as additional context.
+Measures effective bandwidth of GPU-local memory — GDDR on discrete GPUs,
+unified LPDDR on Jetson — **not** HBM-specific (despite older internal names).
+
+Uses a large device-to-device copy (read+write) and a write-only fill probe.
 """
 
 from __future__ import annotations
@@ -16,17 +17,22 @@ from syspeek.core.timing import CudaTimer
 _GB = 1e9
 
 
-class HbmBandwidthBenchmark(Benchmark):
+class DeviceMemBandwidthBenchmark(Benchmark):
     name = "device_mem_bw"
     category = "memory"
-    description = "On-device memory bandwidth via large copy (read+write) and write-only."
+    description = (
+        "GPU local memory bandwidth (GDDR/LPDDR): device copy (read+write) and write-only."
+    )
 
     def run(self, ctx: RunContext) -> list[BenchmarkResult]:
         device = ctx.torch_device
-        nbytes = int(ctx.sizes.get("hbm_bytes", 1024 * 1024 * 1024))
+        nbytes = int(
+            ctx.sizes.get(
+                "device_mem_bytes",
+                ctx.sizes.get("hbm_bytes", 1024 * 1024 * 1024),  # legacy key
+            )
+        )
         nbytes = self._fit(nbytes, device)
-        # Disable L2 flush: buffers far exceed L2, and zeroing the flush buffer
-        # would itself consume the bandwidth we are trying to measure.
         timer = CudaTimer(ctx.warmup, ctx.rep, flush_l2=False, device=device)
 
         results: list[BenchmarkResult] = []
@@ -36,7 +42,7 @@ class HbmBandwidthBenchmark(Benchmark):
         except torch.cuda.OutOfMemoryError as e:
             return [
                 BenchmarkResult(
-                    name="hbm_copy",
+                    name="device_mem_copy",
                     category=self.category,
                     value=0.0,
                     unit="GB/s",
@@ -50,7 +56,7 @@ class HbmBandwidthBenchmark(Benchmark):
         peak = self._theoretical(ctx)
         results.append(
             BenchmarkResult(
-                name="hbm_copy",
+                name="device_mem_copy",
                 category=self.category,
                 value=copy_gbps,
                 unit="GB/s",
@@ -66,7 +72,7 @@ class HbmBandwidthBenchmark(Benchmark):
         write_gbps = nbytes / (write_stats.median_ms * 1e-3) / _GB
         results.append(
             BenchmarkResult(
-                name="hbm_write",
+                name="device_mem_write",
                 category=self.category,
                 value=write_gbps,
                 unit="GB/s",

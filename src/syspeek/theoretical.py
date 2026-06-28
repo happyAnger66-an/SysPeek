@@ -104,12 +104,63 @@ _TABLE: dict[str, dict[str, float]] = {
         "pcie_bandwidth_gbps": 15.75,  # Gen4 x8, one direction
         "flops_fp32_tflops": 29.1,
         "flops_tf32_tflops": 29.1,
-        "flops_fp16_tflops": 58.2,
+        "flops_fp16_tflops": 58.2,  # cuBLAS FP32 acc (GeForce Ada)
         "flops_bf16_tflops": 58.2,
+        "flops_fp16_fast_tflops": 116.3,  # FP16 acc peak (not default torch path)
+        "flops_bf16_fast_tflops": 116.3,
         "flops_int8_tflops": 232.0,
         "flops_fp8_tflops": 232.0,
     },
+    # Jetson T5000 (Thor) — MAXN, **dense** GEMM (no 2:4 sparsity). See DS-11945-001.
+    # Marketing "2070 TFLOPS" is sparse FP4; do not compare directly to SysPeek dense GEMM.
+    "jetson t5000": {
+        "mem_bandwidth_gbps": 273.0,
+        "flops_fp32_tflops": 8.064,  # 2560 CUDA cores @ 1.575 GHz MAXN
+        "flops_tf32_tflops": 42.0,  # dense TF32 tensor (cuBLAS), below sparse peak
+        "flops_fp16_tflops": 128.0,  # dense FP16, FP32 accumulate (cuBLAS default)
+        "flops_bf16_tflops": 128.0,
+        "flops_fp16_fast_tflops": 258.0,  # dense FP16/BF16 acc (~½ sparse FP16 517)
+        "flops_bf16_fast_tflops": 258.0,
+        "flops_int8_tflops": 517.0,  # dense MAXN (datasheet dense FP8 ≡ INT8)
+        "flops_fp8_tflops": 517.0,
+    },
+    "thor": {
+        "mem_bandwidth_gbps": 273.0,
+        "flops_fp32_tflops": 8.064,
+        "flops_tf32_tflops": 42.0,
+        "flops_fp16_tflops": 128.0,
+        "flops_bf16_tflops": 128.0,
+        "flops_fp16_fast_tflops": 258.0,
+        "flops_bf16_fast_tflops": 258.0,
+        "flops_int8_tflops": 517.0,
+        "flops_fp8_tflops": 517.0,
+    },
 }
+
+
+# Known CUDA core counts when device props only expose SM count.
+_CUDA_CORE_COUNT_HINTS: dict[str, int] = {
+    "jetson t5000": 2560,
+    "t5000": 2560,
+    "thor": 2560,
+    "jetson t4000": 1536,
+    "t4000": 1536,
+}
+
+
+def _cuda_core_count(device: "DeviceInfo") -> Optional[int]:
+    hint_key = _match_table_key(device)
+    if hint_key and hint_key in _CUDA_CORE_COUNT_HINTS:
+        return _CUDA_CORE_COUNT_HINTS[hint_key]
+    name = device.name.lower()
+    board = str(device.extra.get("board_model", "")).lower()
+    for key, cores in _CUDA_CORE_COUNT_HINTS.items():
+        if key in name or key in board:
+            return cores
+    cpsm = _cores_per_sm(device.compute_capability)
+    if cpsm is None:
+        return None
+    return device.multi_processor_count * cpsm
 
 
 def _bus_width_bits(device: "DeviceInfo") -> Optional[int]:
@@ -128,6 +179,9 @@ def _bus_width_bits(device: "DeviceInfo") -> Optional[int]:
     for hint_key, width in _BUS_WIDTH_HINTS.items():
         if hint_key in name:
             return width
+    # Jetson unified memory
+    if device.platform == "jetson" or device.is_integrated:
+        return 256
     return None
 
 
@@ -207,10 +261,9 @@ def _cores_per_sm(cc: tuple[int, int]) -> Optional[int]:
 
 
 def _derive_fp32_tflops(device: "DeviceInfo") -> TheoreticalPeak:
-    sms = device.multi_processor_count
-    cpsm = _cores_per_sm(device.compute_capability)
-    if cpsm is None or sms <= 0:
-        return TheoreticalPeak(None, None, "unknown CUDA cores/SM for this arch")
+    cores = _cuda_core_count(device)
+    if cores is None or cores <= 0:
+        return TheoreticalPeak(None, None, "unknown CUDA core count for this device")
 
     smi = _query_nvidia_smi(device.index, "clocks.max.sm")
     if not smi:
@@ -226,20 +279,19 @@ def _derive_fp32_tflops(device: "DeviceInfo") -> TheoreticalPeak:
     if sm_mhz <= 0:
         return TheoreticalPeak(None, None, "SM clock is zero")
 
-    cores = sms * cpsm
-    tflops = cores * 2.0 * (sm_mhz * 1e6) / 1e12
-    detail = (
-        f"{cores} CUDA cores ({sms} SM × {cpsm}), "
-        f"max SM clock {sm_mhz:.0f} MHz (nvidia-smi)"
-    )
-    return TheoreticalPeak(round(tflops, 2), "auto", detail)
+    tflops = round(cores * 2.0 * (sm_mhz * 1e6) / 1e12, 2)
+    detail = f"{cores} CUDA cores, max SM clock {sm_mhz:.0f} MHz (nvidia-smi)"
+    return TheoreticalPeak(tflops, "auto", detail)
 
 
 def _derive_compute_auto(device: "DeviceInfo", metric: str) -> TheoreticalPeak:
     if not metric.startswith("flops_") or not metric.endswith("_tflops"):
         return TheoreticalPeak(None, None, f"unsupported compute metric: {metric}")
 
-    dtype = metric[len("flops_") : -len("_tflops")]
+    body = metric[len("flops_") : -len("_tflops")]
+    fast = body.endswith("_fast")
+    dtype = body[:-5] if fast else body
+
     base = _derive_fp32_tflops(device)
     if not base.has_value:
         return base
@@ -249,29 +301,29 @@ def _derive_compute_auto(device: "DeviceInfo", metric: str) -> TheoreticalPeak:
     consumer = _is_consumer_geforce(device)
     cc = device.compute_capability
 
-    multipliers: dict[str, float] = {}
     if dtype == "fp32":
-        multipliers = {"fp32": 1.0}
+        mult = 1.0
     elif dtype == "tf32":
-        multipliers = {"tf32": 1.0}
+        mult = 4.0 if not consumer else 4.0  # tensor TF32 vs CUDA
     elif dtype in ("fp16", "bf16"):
-        # torch.matmul → cuBLAS FP32 accumulate
-        mult = 2.0 if consumer else 4.0
-        multipliers = {dtype: mult}
+        if fast:
+            mult = 8.0 if cc >= (9, 0) else 4.0
+        else:
+            mult = 2.0 if consumer else 4.0
     elif dtype in ("int8", "fp8"):
         if consumer and cc >= (8, 0):
             mult = 8.0
         elif cc >= (9, 0):
-            mult = 8.0
+            mult = 16.0 if fast else 8.0
         else:
             mult = 4.0
-        multipliers = {dtype: mult}
     else:
         return TheoreticalPeak(None, None, f"unsupported dtype: {dtype}")
 
-    mult = multipliers[dtype]
     val = round(fp32 * mult, 2)
-    acc_note = "FP32 acc" if dtype in ("fp16", "bf16") else "tensor path"
+    acc_note = "FP16/BF16 acc" if fast and dtype in ("fp16", "bf16") else (
+        "FP32 acc" if dtype in ("fp16", "bf16") else "tensor path"
+    )
     detail = f"{base.detail}; {dtype} ×{mult:g} ({acc_note})"
     return TheoreticalPeak(val, "auto", detail)
 

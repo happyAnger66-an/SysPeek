@@ -120,12 +120,14 @@ RTX 4070 卡端为 **PCIe Gen4 x8**，单向理论约 **15.75 GB/s**。实测 pi
 
 ---
 
-## 显存带宽：`device_mem_bw`
+## GPU 本地显存带宽：`device_mem_bw`
 
-- **hbm_copy**：大块 device-to-device `copy_`，每字节读一次、写一次，有效字节量 = **2 × buffer**。
-- **hbm_write**：`fill_` 写满 buffer，有效字节量 = **1 × buffer**。
+> **命名说明**：结果项为 `device_mem_copy` / `device_mem_write`。消费级显卡（如 RTX 4070）为 **GDDR6X**，数据中心卡才可能用 **HBM**；本项统测 **GPU 片上内存**（GDDR / LPDDR / HBM 均适用），与是否 HBM 无关。
 
-理论值对应 **GDDR / LPDDR 峰值**（4070 约 504 GB/s），与 PCIe 理论值无关。
+- **device_mem_copy**：大块 device-to-device `copy_`，每字节读一次、写一次，有效字节量 = **2 × buffer**。
+- **device_mem_write**：`fill_` 写满 buffer，有效字节量 = **1 × buffer**。
+
+理论值对应 **GDDR / LPDDR / HBM 峰值**（4070 GDDR6X 约 504 GB/s），与 PCIe 理论值无关。
 
 ---
 
@@ -137,7 +139,8 @@ RTX 4070 卡端为 **PCIe Gen4 x8**，单向理论约 **15.75 GB/s**。实测 pi
 | d2h_pinned | ~17–18 GB/s | 同上 | 与 H2D 基本对称 |
 | h2d_pageable | ~12 GB/s | 同上（参考） | CPU staging，Eff. ~75% |
 | d2h_pageable | ~9 GB/s | 同上（参考） | 写回 pageable 更慢，Eff. ~55% |
-| hbm_copy | ~400 GB/s | GDDR ~504 GB/s | 显存内部 |
+| device_mem_copy | ~455 GB/s | GDDR ~504 GB/s | GPU 显存内部 D2D |
+| device_mem_write | ~480 GB/s | GDDR ~504 GB/s | GPU 显存纯写 |
 
 Eff. 略超 100%（如 pinned 112%）可能来自：十进制 GB/s（1e9）计量、实测波动、或略高于保守规格录入——表示 **已在链路边界运行**。
 
@@ -165,7 +168,7 @@ syspeek run --bench host_device_bw --transfer-mode threaded
 | 文件 | 内容 |
 |------|------|
 | `src/syspeek/benchmarks/memory_transfer.py` | H2D/D2H 实现（multi_stream / threaded） |
-| `src/syspeek/benchmarks/memory_hbm.py` | 显存 copy / write 带宽 |
+| `src/syspeek/benchmarks/memory_device.py` | GPU 本地显存 copy / write 带宽 |
 | `src/syspeek/theoretical.py` | PCIe / 显存理论峰值推导与固定表 |
 
 ---

@@ -5,7 +5,7 @@ from __future__ import annotations
 from syspeek.benchmarks.base import Benchmark
 from syspeek.benchmarks.compute_flops import GemmFlopsBenchmark
 from syspeek.benchmarks.latency import KernelLaunchLatencyBenchmark
-from syspeek.benchmarks.memory_hbm import HbmBandwidthBenchmark
+from syspeek.benchmarks.memory_device import DeviceMemBandwidthBenchmark
 from syspeek.benchmarks.memory_transfer import HostDeviceBandwidthBenchmark
 from syspeek.core.registry import register
 
@@ -15,7 +15,7 @@ from syspeek.core.registry import BENCHMARKS as _REG
 for _bench in (
     GemmFlopsBenchmark(),
     HostDeviceBandwidthBenchmark(),
-    HbmBandwidthBenchmark(),
+    DeviceMemBandwidthBenchmark(),
     KernelLaunchLatencyBenchmark(),
 ):
     if _bench.name not in _REG:
@@ -25,6 +25,6 @@ __all__ = [
     "Benchmark",
     "GemmFlopsBenchmark",
     "HostDeviceBandwidthBenchmark",
-    "HbmBandwidthBenchmark",
+    "DeviceMemBandwidthBenchmark",
     "KernelLaunchLatencyBenchmark",
 ]
