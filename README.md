@@ -17,53 +17,99 @@
 
 ## 安装
 
-### 方式 A：venv（推荐，隔离依赖）
+通用依赖：**Python ≥ 3.10**、**PyTorch ≥ 2.0（CUDA 构建）**。SysPeek 本体与 PyTorch 的 CUDA 版本需与当前平台一致；**桌面独显**与 **Jetson** 安装 PyTorch 的方式不同，见下表。
+
+| 平台 | 典型设备 | 架构 | CUDA / JetPack | PyTorch wheel |
+|------|----------|------|----------------|---------------|
+| 桌面 Linux + 独显 | RTX 4070 等 | x86_64 | CUDA 12.x（如 12.8） | [`cu128`](https://download.pytorch.org/whl/cu128) |
+| Jetson | Jetson Thor 等 | aarch64 | **CUDA 13**（JetPack 7+） | [`cu130`](https://download.pytorch.org/whl/cu130) |
+
+内存与带宽测试说明见 [docs/memory.md](docs/memory.md)。
+
+---
+
+### 桌面独显（如 RTX 4070，x86_64 + cu128）
 
 ```bash
 cd SysPeek
 
-# 一键创建 .venv 并 editable 安装
+# 可选：一键 venv + 安装 SysPeek（不含 torch）
 chmod +x scripts/setup_venv.sh
 ./scripts/setup_venv.sh
-
-# 激活环境（每次新开终端需要）
 source .venv/bin/activate
 
-# 安装带 CUDA 的 PyTorch（按你的驱动/CUDA 版本选 index）
+# PyTorch（CUDA 12.8 示例，与驱动/CUDA 版本对齐）
 pip install torch --index-url https://download.pytorch.org/whl/cu128
+
+# 安装 SysPeek（若未跑 setup_venv.sh）
+pip install -e .
 
 # 验证
 syspeek info
 syspeek run
 ```
 
-手动创建 venv 也可以：
+手动 venv：
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
-pip install torch --index-url https://download.pytorch.org/whl/cu128   # 或 cu126 等
+pip install torch --index-url https://download.pytorch.org/whl/cu128
 pip install -e .
 ```
 
-退出 venv：`deactivate`
+---
+
+### Jetson Thor（aarch64 + CUDA 13 / cu130）
+
+Thor 运行在 **JetPack 7+ / CUDA 13** 上，请使用 **`cu130`** 索引，**不要**在 Thor 上安装桌面用的 `cu128` wheel。
+
+```bash
+cd SysPeek
+
+chmod +x scripts/setup_venv.sh
+./scripts/setup_venv.sh
+source .venv/bin/activate
+
+# Jetson Thor：CUDA 13 → cu130
+pip install torch --index-url https://download.pytorch.org/whl/cu130
+
+pip install -e .
+
+syspeek info    # platform 应显示 jetson
+syspeek run
+```
+
+**Jetson 注意：**
+
+- 若 JetPack 已预装系统级 PyTorch，也可在 venv 中单独安装 **与 JetPack CUDA 13 匹配** 的 `cu130` wheel，避免混用 `cu128`。
+- 统一内存：建议减小 buffer，例如  
+  `syspeek run --transfer-mb 128 --hbm-mb 256 --gemm-size 4096`
+- 理论峰值需在 Thor 真机标定后写入 `theoretical.py`（当前可能只显示实测、无 Eff.）。
+
+---
 
 ### 方式 B：全局 / 用户目录安装
+
+在对应平台装好 **匹配的 PyTorch** 后：
 
 ```bash
 cd SysPeek
 pip install -e .
 ```
 
+---
+
 ### 方式 C：不安装，临时运行
 
 ```bash
+# 仍需当前 shell 能 import 到 CUDA 版 torch
 PYTHONPATH=src python -m syspeek.cli info
 PYTHONPATH=src python -m syspeek.cli run
 ```
 
-依赖：Python ≥ 3.10、PyTorch ≥ 2.0（**CUDA 构建**，GPU 跑分必需）。4070 / Jetson Thor 均使用官方 PyTorch wheel。
+退出 venv：`deactivate`
 
 ## 用法
 
